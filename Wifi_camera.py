@@ -16,12 +16,33 @@ from datetime import datetime
 import torch
 import os
 import time
+import multiprocessing
+import psutil
 
 # Prueba de funcionamiento de cuda con pytorch:
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)} está disponible.")
 else:
     print("No hay una GPU disponible. Se usará la CPU")
+
+# Limitar hilos por variables de entorno
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENMP"] = "false"
+
+# Limitar hilos en OpenCV y PyTorch:
+cv2.setNumThreads(1)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
+# Obtener el ID del proceso actual
+p = psutil.Process(os.getpid())
+# Limitar la afinidad del proceso a un solo núcleo (el núcleo 0)
+p.cpu_affinity([0])
+print(f"Afinidad de CPU establecida para el proceso: {p.cpu_affinity()}")
 
 # Función de escritura en BD:
 def write(sql_str: str):
@@ -36,6 +57,18 @@ def query(sql_str: str):
         cursor = conn.cursor()
         cursor.execute(sql_str)
         return cursor.fetchall()
+
+# Crear campos en la BD, de ser nueva:
+with sqlite3.connect('db.db') as conn:
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Registers (
+        DateTime TEXT,
+        Track_Id INTEGER,
+        Path     TEXT
+    );
+    ''')
+    conn.commit()
 
 # URL RTSP de la cámara (reemplaza con la URL correcta)
 rtsp_url = "rtsp://abuenov:ingdesonido@192.168.1.40:554/stream1"
@@ -64,6 +97,9 @@ if last_id is None:
 # Análisis de cuadros del video:
 c = 0
 detected_ids = []
+# Información sobre núcleos disponibles y configurados
+print("Núcleos disponibles:", multiprocessing.cpu_count())
+print("Núcleos usados por PyTorch:", torch.get_num_threads())
 try:
     while True:
 
