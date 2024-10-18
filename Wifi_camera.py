@@ -172,6 +172,20 @@ try:
 except KeyboardInterrupt:
     print("Interrupción manual recibida. Cerrando...")
 
+except Exception as e:
+    # Obtener la fecha y hora actual
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Nombre del archivo de error
+    error_filename = f"Error_{current_time}.txt"
+
+    # Guardar el error en un archivo de texto
+    with open(error_filename, "w") as f:
+        f.write(f"Ocurrió un error inesperado a las {current_time}:\n")
+        f.write(str(e))
+
+    print(f"Se ha guardado el error en {error_filename}")
+
 # Liberar la captura y cerrar las ventanas
 cap.release()
 cv2.destroyAllWindows()
