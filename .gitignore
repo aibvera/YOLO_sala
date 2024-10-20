@@ -1,3 +1,4 @@
 venv/
 saved/
 /db.db
+/run.bat
