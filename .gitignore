@@ -2,3 +2,5 @@ venv/
 saved/
 /db.db
 /run.bat
+test_frame.jpg
+tests/__pycache__

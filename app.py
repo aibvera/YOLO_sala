@@ -1,6 +1,6 @@
 '''
 Buenas.
-ABV 2023.
+ABV 2024.
 
 Script para la supervisión.
 
@@ -17,33 +17,12 @@ from datetime import datetime
 import torch
 import os
 import time
-import multiprocessing
-import psutil
 
 # Prueba de funcionamiento de cuda con pytorch:
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)} está disponible.")
 else:
     print("No hay una GPU disponible. Se usará la CPU")
-
-# Limitar hilos por variables de entorno
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OPENMP"] = "false"
-
-# Limitar hilos en OpenCV y PyTorch:
-cv2.setNumThreads(1)
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-
-# Obtener el ID del proceso actual
-p = psutil.Process(os.getpid())
-# Limitar la afinidad del proceso a un solo núcleo (el núcleo 0)
-p.cpu_affinity([0])
-print(f"Afinidad de CPU establecida para el proceso: {p.cpu_affinity()}")
 
 # Función de escritura en BD:
 def write(sql_str: str):
@@ -87,20 +66,15 @@ if not cap.isOpened():
 # Importar modelo YOLO:
 model = YOLO('yolov8n.pt')
 
-# Crear una ventana nombrada para mostrar el video:
-# cv2.namedWindow('Cámara de Seguridad', cv2.WINDOW_NORMAL)
-
 # Encontrar el último id detectado:
 last_id = query('SELECT MAX(Track_Id) FROM Registers;')[0][0]
 if last_id is None:
     last_id = 0
 
 # Análisis de cuadros del video:
-c = 0
 detected_ids = []
-# Información sobre núcleos disponibles y configurados
-print("Núcleos disponibles:", multiprocessing.cpu_count())
-print("Núcleos usados por PyTorch:", torch.get_num_threads())
+c = 0
+print('Iniciando bucle de detección')
 try:
     while True:
 
@@ -111,18 +85,15 @@ try:
             print("Error al recibir el frame de la cámara")
             break
         t = time.time() - start
-        if t > 5_000:
+        if t > 1_000:
             dt_string = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print('Lectura de cuadros muy lenta /', dt_string)
 
-        # Contador de N cuadros por segundo:
-        if c > 0 and c <= 4:
-            c += 1
-            continue
-        else:
-            c = 0
-
         # Tracking persistente (consistente entre cuadros) de las cajas:
+        c += 1
+        if c % 15 != 0:
+            continue
+        c = 0
         results = model.track(frame, persist=True, classes=0, show=False, verbose=False)
         frame = results[0].plot()
 
@@ -159,16 +130,6 @@ try:
                     write(query)
                     print('Se detecto y guardó correctamente al id', new_id)
 
-        # Mostrar el frame capturado en la ventana estable:
-        # cv2.imshow('Camara de Seguridad', frame)
-
-        # Presionar 'q' para salir del bucle:
-        # if cv2.waitKey(1) & 0xFF == ord('q'):
-        #     break
-
-        # Actualizar contador:
-        c += 1
-
 except KeyboardInterrupt:
     print("Interrupción manual recibida. Cerrando...")
 
@@ -188,4 +149,3 @@ except Exception as e:
 
 # Liberar la captura y cerrar las ventanas
 cap.release()
-cv2.destroyAllWindows()
