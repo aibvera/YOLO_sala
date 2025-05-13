@@ -24,32 +24,6 @@ if torch.cuda.is_available():
 else:
     print("No hay una GPU disponible. Se usará la CPU")
 
-# Función de escritura en BD:
-def write(sql_str: str):
-    with sqlite3.connect('db.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql_str)
-        conn.commit()
-
-# Función de lectura de BD:
-def query(sql_str: str):
-    with sqlite3.connect('db.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute(sql_str)
-        return cursor.fetchall()
-
-# Crear campos en la BD, de ser nueva:
-with sqlite3.connect('db.db') as conn:
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS Registers (
-        DateTime TEXT,
-        Track_Id INTEGER,
-        Path     TEXT
-    );
-    ''')
-    conn.commit()
-
 # URL RTSP de la cámara (reemplaza con la URL correcta)
 rtsp_url = "rtsp://abuenov:ingdesonido@192.168.1.40:554/stream1"
 # /stream1 para visualización dentro de la misma red.
@@ -66,13 +40,7 @@ if not cap.isOpened():
 # Importar modelo YOLO:
 model = YOLO('yolov8n.pt')
 
-# Encontrar el último id detectado:
-last_id = query('SELECT MAX(Track_Id) FROM Registers;')[0][0]
-if last_id is None:
-    last_id = 0
-
 # Análisis de cuadros del video:
-detected_ids = []
 c = 0
 print('Iniciando bucle de detección')
 try:
@@ -89,53 +57,44 @@ try:
             dt_string = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print('Lectura de cuadros muy lenta /', dt_string)
 
-        # Tracking persistente (consistente entre cuadros) de las cajas:
+        # Detección de bertas:
         c += 1
-        if c % 15 != 0:
+        if c % 30 != 0:
             continue
         c = 0
-        results = model.track(frame, persist=True, classes=0, show=False, verbose=False)
+        results = model.predict(frame, classes=[0,16], show=False, verbose=False)
         frame = results[0].plot()
 
         # Procesar cajas si se han detectado:
-        if results[0].boxes.id is not None:
+        if results[0].boxes is not None:
             boxes = results[0].boxes.xywh.cpu()
-            track_ids = results[0].boxes.id.int().cpu().tolist()
 
             # Loop entre cajas detectadas:
-            for box, track_id in zip(boxes, track_ids):
-                if track_id not in detected_ids:  # Para no sobreescribir la primera
+            for box in boxes:
 
-                    # Selección de caja desde imagen:
-                    x, y, w, h = box
-                    x = int(x)
-                    y = int(y)
-                    w = int(w/2)
-                    h = int(h/2)
-                    detected = frame[y-h:y+h,x-w:x+w,:]
+                # Selección de caja desde imagen:
+                x, y, w, h = box
+                x = int(x)
+                y = int(y)
+                w = int(w/2)
+                h = int(h/2)
+                detected = frame[y-h:y+h,x-w:x+w,:]
 
-                    # Guardar imagen de la caja:
-                    d_string = datetime.now().strftime("%Y-%m-%d")
-                    p = f'saved/{d_string}'
-                    if not os.path.isdir(p):
-                        os.mkdir(p)
-                    new_id = last_id + track_id
-                    file_path = f'./saved/{d_string}/Id_{new_id}.png'
-                    cv2.imwrite(file_path, detected)
-                    detected_ids.append(track_id)
-
-                    # Escritura del registro en BD:
-                    dt_string = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    query = f'''INSERT INTO Registers (DateTime, Track_Id, Path) VALUES ('{dt_string}', {str(new_id)}, '{file_path}');'''
-                    write(query)
-                    print('Se detecto y guardó correctamente al id', new_id)
+                # Guardar imagen de la caja:
+                date_today = datetime.now().strftime('%Y-%m-%d')
+                time_now = datetime.now().strftime('%H-%M-%S')
+                save_dir = os.path.join('saved', date_today)
+                os.makedirs(save_dir, exist_ok=True)  # Crea todos los directorios necesarios
+                file_path = os.path.join(save_dir, f'{time_now}.png')
+                cv2.imwrite(file_path, detected)
+                print('Se detecto y guardó correctamente una imagen a las', time_now)
 
 except KeyboardInterrupt:
     print("Interrupción manual recibida. Cerrando...")
 
 except Exception as e:
     # Obtener la fecha y hora actual
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    current_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
 
     # Nombre del archivo de error
     error_filename = f"Error_{current_time}.txt"
@@ -144,6 +103,7 @@ except Exception as e:
     with open(error_filename, "w") as f:
         f.write(f"Ocurrió un error inesperado a las {current_time}:\n")
         f.write(str(e))
+        f.write('\n')
 
     print(f"Se ha guardado el error en {error_filename}")
 
